@@ -45,7 +45,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.10.2"
+          gradle-version: "8.13"
 
       - name: Extract project ZIP
         shell: bash
@@ -59,13 +59,21 @@ jobs:
           echo "Project directory: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
 
-      - name: Prepare KSP configuration
+      - name: Align Kotlin and LiteRT-LM versions
         shell: bash
         working-directory: extracted/VitaFlow
         run: |
+          set -euxo pipefail
+          sed -i 's/^agp = "8.7.3"/agp = "8.13.2"/' gradle/libs.versions.toml
+          sed -i 's/^kotlin = "2.1.0"/kotlin = "2.3.10"/' gradle/libs.versions.toml
+          sed -i 's/^ksp = "2.1.0-1.0.29"/ksp = "2.3.10"/' gradle/libs.versions.toml
+          sed -i 's/version = "latest.release"/version = "0.16.1"/' gradle/libs.versions.toml
           sed -i '/^ksp\.useKSP2=false$/d' gradle.properties
-          echo "gradle.properties:"
-          cat gradle.properties
+          sed -i 's/gradle-8\.10\.2-bin/gradle-8.13-bin/' gradle/wrapper/gradle-wrapper.properties
+          echo "Updated version catalog:"
+          cat gradle/libs.versions.toml
+          echo "Updated Gradle wrapper:"
+          grep distributionUrl gradle/wrapper/gradle-wrapper.properties
 
       - name: Build debug APK
         shell: bash
