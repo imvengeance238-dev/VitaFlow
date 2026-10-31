@@ -13,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,16 +24,23 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Install Android SDK packages
+      - name: Locate and prepare Android SDK
         shell: bash
         run: |
-          SDKMANAGER="$(find "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+          set -euxo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "Android SDK root: $SDK_ROOT"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$(find "$SDK_ROOT" -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
           if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager was not found on the runner."
+            echo "sdkmanager not found under $SDK_ROOT"
+            find /usr/local/lib/android /opt -type f -name sdkmanager 2>/dev/null | head -20 || true
             exit 1
           fi
-          yes | "$SDKMANAGER" --licenses >/dev/null
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" --list_installed
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -40,36 +48,38 @@ jobs:
           gradle-version: "8.10.2"
 
       - name: Extract project ZIP
+        shell: bash
         run: |
-          test -f VitaFlow-phase5.zip
+          set -euxo pipefail
+          test -s VitaFlow-phase5.zip
           unzip -q VitaFlow-phase5.zip -d extracted
-          PROJECT_DIR="$(find extracted -mindepth 1 -maxdepth 2 -name settings.gradle.kts -printf '%h\n' | head -n 1)"
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "Could not locate settings.gradle.kts inside the uploaded ZIP."
-            exit 1
-          fi
+          PROJECT_DIR="$(find extracted -type f -name settings.gradle.kts -printf '%h\n' | head -n 1)"
+          test -n "$PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project directory: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
 
       - name: Prepare KSP configuration
-        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        working-directory: extracted/VitaFlow
         run: |
-          sed -i '/^ksp\.useKSP2=false$/d' gradle.properties || true
-          echo "Using the KSP2 default for Kotlin 2.1."
+          sed -i '/^ksp\.useKSP2=false$/d' gradle.properties
+          echo "gradle.properties:"
+          cat gradle.properties
 
       - name: Build debug APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
-
-      - name: Generate signing report
-        if: always()
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle --no-daemon :app:signingReport || true
+        shell: bash
+        working-directory: extracted/VitaFlow
+        run: |
+          set -euxo pipefail
+          gradle --version
+          gradle --no-daemon :app:assembleDebug --stacktrace --info
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: VitaFlow-debug-apk
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: extracted/VitaFlow/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
