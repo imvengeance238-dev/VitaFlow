@@ -74,6 +74,22 @@ jobs:
           cat gradle/libs.versions.toml
           echo "Updated Gradle wrapper:"
           grep distributionUrl gradle/wrapper/gradle-wrapper.properties
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          old = '''    kotlinOptions {
+                  jvmTarget = "17"
+              }'''
+          # Normalize the original block by matching its exact source text.
+          old = '    kotlinOptions {\n        jvmTarget = "17"\n    }'
+          new = '}\n\nkotlin {\n    compilerOptions {\n        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)\n    }'
+          if old not in s:
+              raise SystemExit("Expected kotlinOptions jvmTarget block not found; refusing unsafe edit")
+          p.write_text(s.replace(old, new, 1))
+          print("Migrated deprecated kotlinOptions to compilerOptions DSL")
+          PY
+          sed -n '24,48p' app/build.gradle.kts
 
       - name: Build debug APK
         shell: bash
