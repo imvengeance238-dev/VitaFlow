@@ -78,16 +78,18 @@ jobs:
           from pathlib import Path
           p = Path("app/build.gradle.kts")
           s = p.read_text()
-          old = '''    kotlinOptions {
-                  jvmTarget = "17"
-              }'''
-          # Normalize the original block by matching its exact source text.
-          old = '    kotlinOptions {\n        jvmTarget = "17"\n    }'
-          new = '}\n\nkotlin {\n    compilerOptions {\n        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)\n    }'
+          old = '    kotlinOptions {\n        jvmTarget = "17"\n    }\n'
           if old not in s:
-              raise SystemExit("Expected kotlinOptions jvmTarget block not found; refusing unsafe edit")
-          p.write_text(s.replace(old, new, 1))
-          print("Migrated deprecated kotlinOptions to compilerOptions DSL")
+              raise SystemExit("Expected kotlinOptions block not found; refusing unsafe edit")
+          s = s.replace(old, "", 1)
+          marker = '\n}\n\n'
+          pos = s.find(marker)
+          if pos < 0:
+              raise SystemExit("Could not find end of android block")
+          pos += len(marker)
+          s = s[:pos] + 'kotlin {\n    compilerOptions {\n        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)\n    }\n}\n\n' + s[pos:]
+          p.write_text(s)
+          print("Migrated jvmTarget to top-level Kotlin compilerOptions DSL")
           PY
           sed -n '24,48p' app/build.gradle.kts
 
